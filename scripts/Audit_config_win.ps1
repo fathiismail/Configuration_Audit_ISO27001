@@ -692,19 +692,36 @@ function Test-BitLockerOSDrive {
 }
 
 function Get-WindowsFamily {
-    param([string]$ProductName)
+    param([string]$ProductName, [string]$Build)
+
+    $buildNum = $null
+    [int]::TryParse($Build, [ref]$buildNum) | Out-Null
+
     if ($ProductName -match 'Windows 11') { return 'Windows 11' }
     if ($ProductName -match 'Windows 10') { return 'Windows 10' }
     if ($ProductName -match 'Windows Server 2022') { return 'Windows Server 2022' }
     if ($ProductName -match 'Windows Server 2019') { return 'Windows Server 2019' }
     if ($ProductName -match 'Windows Server 2016') { return 'Windows Server 2016' }
+
+    if ($buildNum) {
+        # Desktop/workstation builds: Windows 11 uses build 22000+, while Windows 10 stops at 19045
+        if ($buildNum -ge 26000) { return 'Windows 11' }
+        if ($buildNum -ge 22000) { return 'Windows 11' }
+        if ($buildNum -ge 19000 -and $buildNum -lt 22000) { return 'Windows 10' }
+
+        # Server builds (best-effort fallback when product name is ambiguous)
+        if ($buildNum -ge 20348 -and $buildNum -lt 22000) { return 'Windows Server 2022' }
+        if ($buildNum -ge 17763 -and $buildNum -lt 19000) { return 'Windows Server 2019' }
+        if ($buildNum -ge 14393 -and $buildNum -lt 17763) { return 'Windows Server 2016' }
+    }
+
     return 'Unknown'
 }
 
 function Get-WindowsLifecycleRecord {
     param([string]$Family, [string]$Build, [string]$VersionLabel)
     $table = @(
-        @{Family='Windows 11'; Release='24H2'; BuildPrefix=@('26100'); SupportEnd=[datetime]'2027-10-14'},
+        @{Family='Windows 11'; Release='24H2'; BuildPrefix=@('26100','26200'); SupportEnd=[datetime]'2027-10-14'},
         @{Family='Windows 11'; Release='23H2'; BuildPrefix=@('22631'); SupportEnd=[datetime]'2025-11-11'},
         @{Family='Windows 11'; Release='22H2'; BuildPrefix=@('22621'); SupportEnd=[datetime]'2024-10-08'},
         @{Family='Windows 10'; Release='22H2'; BuildPrefix=@('19045'); SupportEnd=[datetime]'2025-10-14'},
@@ -767,7 +784,7 @@ function Test-WindowsVersionSupport {
         if (-not $versionLabel) { $versionLabel = $releaseId }
         if (-not $versionLabel) { $versionLabel = $osVersion }
 
-        $family = Get-WindowsFamily -ProductName $productName
+        $family = Get-WindowsFamily -ProductName $productName -Build $build
         $lifecycle = Get-WindowsLifecycleRecord -Family $family -Build $build -VersionLabel $versionLabel
 
         $supportEnd = $null
@@ -788,7 +805,7 @@ function Test-WindowsVersionSupport {
         }
 
         $supportEndText = if ($supportEnd) { $supportEnd.ToString('yyyy-MM-dd') } else { "(unknown)" }
-        $ev = "Product=$productName; Version=$versionLabel; Build=$buildFull; SupportEnd=$supportEndText; $updateInfo"
+        $ev = "Family=$family; Product=$productName; Version=$versionLabel; Build=$buildFull; SupportEnd=$supportEndText; $updateInfo"
 
         $res = if ($supportOk) { 'Pass' } else { 'Fail' }
         $recoEN = if ($supportOk) {
