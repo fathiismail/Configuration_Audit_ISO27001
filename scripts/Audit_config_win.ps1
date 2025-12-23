@@ -496,12 +496,20 @@ function Test-RDP {
 
 function Test-RemoteAssistanceDisabled {
     try {
-        $v = Get-RegDword "HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance" "fAllowToGetHelp"
-        if ($null -eq $v) { throw "Cannot read fAllowToGetHelp." }
-        $res = if ($v -eq 0) { 'Pass' } else { 'Fail' }
+        $path = "HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance"
+        $v = Get-RegDword $path "fAllowToGetHelp"
+
+        $missingValue = ($null -eq $v)
+        $disabled = ($v -eq 0 -or $missingValue)
+        $res = if ($disabled) { 'Pass' } else { 'Fail' }
+        $evidence = if ($missingValue) {
+            "fAllowToGetHelp not set under $path (treated as disabled by default)."
+        } else {
+            "fAllowToGetHelp={0} (0=disabled,1=enabled)" -f $v
+        }
         Add-Result "WIN-10" "Remote Assistance disabled" "Assistance a distance desactivee" `
           "A.8.20, A.8.9" Medium $res `
-          ("fAllowToGetHelp={0} (0=disabled,1=enabled)" -f $v) `
+          $evidence `
           "Disable Remote Assistance unless explicitly needed and controlled." `
           "Desactiver l assistance a distance sauf besoin explicite et controle."
     } catch {
@@ -663,17 +671,33 @@ function Test-BitLockerOSDrive {
         $osDrive = $env:SystemDrive
         $ev = ""
         $protOn = $false
+        $checked = $false
 
         if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) {
-            $bl = Get-BitLockerVolume -MountPoint $osDrive -ErrorAction Stop
-            $protOn = ($bl.ProtectionStatus -eq 'On')
-            $ev = ("{0}: Protection={1}, Encryption={2}%, Method={3}" -f $osDrive, $bl.ProtectionStatus, $bl.EncryptionPercentage, $bl.EncryptionMethod)
-        } else {
+            try {
+                $bl = Get-BitLockerVolume -MountPoint $osDrive -ErrorAction Stop
+                $protOn = ($bl.ProtectionStatus -eq 'On')
+                $ev = ("{0}: Protection={1}, Encryption={2}%, Method={3}" -f $osDrive, $bl.ProtectionStatus, $bl.EncryptionPercentage, $bl.EncryptionMethod)
+                $checked = $true
+            } catch {
+                $ev = "Get-BitLockerVolume failed: {0}" -f $_.Exception.Message
+            }
+        }
+
+        if (-not $checked -and (Get-Command manage-bde -ErrorAction SilentlyContinue)) {
             $out = & manage-bde -status $osDrive 2>$null
-            if ($LASTEXITCODE -ne 0 -or -not $out) { throw "manage-bde returned no data." }
-            $t = ($out | Out-String)
-            $protOn = ($t -match 'Protection Status:\s+Protection On')
-            $ev = "manage-bde output parsed. ProtectionOn=$protOn"
+            $checked = $true
+            if ($LASTEXITCODE -eq 0 -and $out) {
+                $t = ($out | Out-String)
+                $protOn = ($t -match 'Protection Status:\s+Protection On')
+                $ev = "manage-bde output parsed. ProtectionOn=$protOn"
+            } else {
+                $ev = "manage-bde returned exit code $LASTEXITCODE or no output when checking $osDrive."
+            }
+        }
+
+        if (-not $checked) {
+            $ev = "BitLocker cmdlets and manage-bde are unavailable on this system (feature not installed?)."
         }
 
         $res = if ($protOn) { 'Pass' } else { 'Fail' }
