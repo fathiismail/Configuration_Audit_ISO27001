@@ -1394,7 +1394,7 @@ $html = @"
 # Write report in UTF-8 (no BOM) to avoid encoding issues in browsers
 $reportFileName = ("WinAudit_{0}_{1}_{2}.html" -f $script:HostName, $Profile, $script:Now.ToString('yyyyMMdd_HHmmss'))
 $reportPath = Join-Path $OutputFolder $reportFileName
-[System.IO.File]::WriteAllText($reportPath, $html, New-Object System.Text.UTF8Encoding($false))
+[System.IO.File]::WriteAllText($reportPath, $html, New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false)
 
 Write-Host ""
 Write-Host (L "Report generated:" "Rapport genere:") -ForegroundColor Green
