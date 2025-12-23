@@ -1536,7 +1536,7 @@ function New-AuditExcelReport {
     $sheetSb.AppendLine('  </sheetData>') | Out-Null
     $sheetSb.AppendLine("  <dataValidations count=""1"">") | Out-Null
     $sheetSb.AppendLine("    <dataValidation type=""list"" allowBlank=""1"" showInputMessage=""1"" showErrorMessage=""1"" sqref=""$statusRange"">") | Out-Null
-    $sheetSb.AppendLine("      <formula1>'Lookups'!$A$2:$A$$statusFormulaEnd</formula1>") | Out-Null
+    $sheetSb.AppendLine("      <formula1>'Lookups'!`$A`$2:`$A`$${statusFormulaEnd}</formula1>") | Out-Null
     $sheetSb.AppendLine("    </dataValidation>") | Out-Null
     $sheetSb.AppendLine("  </dataValidations>") | Out-Null
     $sheetSb.AppendLine('</worksheet>') | Out-Null
