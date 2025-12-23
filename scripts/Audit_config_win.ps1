@@ -791,6 +791,20 @@ function Test-WindowsVersionSupport {
         if (-not $versionLabel) { $versionLabel = $osVersion }
 
         $family = Get-WindowsFamily -ProductName $productName -Build $build
+        $productDisplay = $productName
+        if ($family -and $family -ne 'Unknown' -and ($productDisplay -notmatch [regex]::Escape($family))) {
+            if ($osCaption -and ($osCaption -match $family)) {
+                # Use the CIM caption (e.g., "Microsoft Windows 11 Pro (10.0.26200)") when it already reflects the detected family
+                $productDisplay = $osCaption
+            } elseif ($family -eq 'Windows 11' -and ($productDisplay -match 'Windows 10')) {
+                # Align legacy product names (Windows 10 Pro) with Windows 11 detection when build numbers prove it
+                $productDisplay = $productDisplay -replace 'Windows 10', 'Windows 11'
+            } elseif ($family -eq 'Windows 10' -and ($productDisplay -match 'Windows 11')) {
+                $productDisplay = $productDisplay -replace 'Windows 11', 'Windows 10'
+            } else {
+                $productDisplay = "$family ($productDisplay)"
+            }
+        }
         $lifecycle = Get-WindowsLifecycleRecord -Family $family -Build $build -VersionLabel $versionLabel
 
         $supportEnd = $null
@@ -811,7 +825,7 @@ function Test-WindowsVersionSupport {
         }
 
         $supportEndText = if ($supportEnd) { $supportEnd.ToString('yyyy-MM-dd') } else { "(unknown)" }
-        $ev = "Family=$family; Product=$productName; Version=$versionLabel; Build=$buildFull; SupportEnd=$supportEndText; $updateInfo"
+        $ev = "Family=$family; Product=$productDisplay; Version=$versionLabel; Build=$buildFull; SupportEnd=$supportEndText; $updateInfo"
 
         $res = if ($supportOk) { 'Pass' } else { 'Fail' }
         $recoEN = if ($supportOk) {
