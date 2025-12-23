@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-Windows Configuration Audit Toolkit (offline) - ISO 27001 aligned (technical configuration checks)
+Windows Configuration Audit Toolkit - ISO 27001 aligned (technical configuration checks)
 - Supports: Desktop + Server profile
 - Output: HTML report (EN or FR full translation)
 - No manual checkpoints
@@ -133,12 +133,23 @@ function Ensure-Folder {
     }
 }
 
+function Get-LocalizedAdminGroupName {
+    try {
+        $sid = New-Object Security.Principal.SecurityIdentifier("S-1-5-32-544")
+        $translated = $sid.Translate([Security.Principal.NTAccount])
+        $parts = $translated.Value.Split('\')
+        return $parts[-1]
+    } catch {
+        return "Administrators"
+    }
+}
+
 # --------------------------------
 # Collect basic system information
 # --------------------------------
 $script:Results = New-Object System.Collections.Generic.List[object]
 $script:Now = Get-Date
-$script:ToolVersion = "4.0.1"
+$script:ToolVersion = "4.1.0"
 $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
 
 $script:HostName  = $env:COMPUTERNAME
@@ -334,19 +345,47 @@ function Test-AccountLockoutThreshold {
     }
 }
 
+function Get-LockoutDurationMinutes {
+    $v = Get-SeceditValue "LockoutDuration"
+    if ($null -ne $v) {
+        return [Math]::Abs([int]$v)
+    }
+
+    $out = & net accounts 2>$null
+    if ($LASTEXITCODE -eq 0 -and $out) {
+        $txt = ($out | Out-String)
+        $patterns = @(
+            'Lockout duration[^0-9]*(\d+)',
+            'Dur[eé]e du verrouillage[^0-9]*(\d+)'
+        )
+        foreach ($p in $patterns) {
+            if ($txt -match $p) {
+                return [int]$matches[1]
+            }
+        }
+        $neverPatterns = @(
+            'Lockout duration[^:]*:\s*Never',
+            'Dur[eé]e du verrouillage[^:]*:\s*Jamais'
+        )
+        foreach ($p in $neverPatterns) {
+            if ($txt -match $p) {
+                return 0
+            }
+        }
+    }
+
+    throw "Lockout duration not found in policy export or net accounts output."
+}
+
 function Test-AccountLockoutDuration {
     # LockoutDuration is in minutes in secedit export for many systems (can vary). We'll treat 15+ as acceptable.
     $minMinutes = 15
     try {
-        $v = Get-SeceditValue "LockoutDuration"
-        if ($null -eq $v) { throw "LockoutDuration not found in secedit export." }
-        $cur = [int]$v
-        # Some exports use negative values (in minutes) depending on policy representation.
-        $abs = [Math]::Abs($cur)
-        $res = if ($abs -ge $minMinutes) { 'Pass' } else { 'Fail' }
+        $cur = Get-LockoutDurationMinutes
+        $res = if ($cur -ge $minMinutes) { 'Pass' } else { 'Fail' }
         Add-Result "WIN-06" "Account lockout duration" "Duree de verrouillage de compte" `
           "A.5.15, A.8.5, A.8.9" Medium $res `
-          ("LockoutDuration = {0} (abs={1}) minute(s)" -f $cur,$abs) `
+          ("LockoutDuration = {0} minute(s)" -f $cur) `
           ("Set lockout duration to at least {0} minutes to slow down brute-force attempts." -f $minMinutes) `
           ("Fixer la duree a au moins {0} minutes pour ralentir les attaques force-brute." -f $minMinutes)
     } catch {
@@ -652,6 +691,130 @@ function Test-BitLockerOSDrive {
     }
 }
 
+function Get-WindowsFamily {
+    param([string]$ProductName)
+    if ($ProductName -match 'Windows 11') { return 'Windows 11' }
+    if ($ProductName -match 'Windows 10') { return 'Windows 10' }
+    if ($ProductName -match 'Windows Server 2022') { return 'Windows Server 2022' }
+    if ($ProductName -match 'Windows Server 2019') { return 'Windows Server 2019' }
+    if ($ProductName -match 'Windows Server 2016') { return 'Windows Server 2016' }
+    return 'Unknown'
+}
+
+function Get-WindowsLifecycleRecord {
+    param([string]$Family, [string]$Build, [string]$VersionLabel)
+    $table = @(
+        @{Family='Windows 11'; Release='24H2'; BuildPrefix=@('26100'); SupportEnd=[datetime]'2027-10-14'},
+        @{Family='Windows 11'; Release='23H2'; BuildPrefix=@('22631'); SupportEnd=[datetime]'2025-11-11'},
+        @{Family='Windows 11'; Release='22H2'; BuildPrefix=@('22621'); SupportEnd=[datetime]'2024-10-08'},
+        @{Family='Windows 10'; Release='22H2'; BuildPrefix=@('19045'); SupportEnd=[datetime]'2025-10-14'},
+        @{Family='Windows Server 2022'; Release='21H2'; BuildPrefix=@('20348'); SupportEnd=[datetime]'2031-10-14'},
+        @{Family='Windows Server 2019'; Release='1809'; BuildPrefix=@('17763'); SupportEnd=[datetime]'2029-01-09'},
+        @{Family='Windows Server 2016'; Release='1607'; BuildPrefix=@('14393'); SupportEnd=[datetime]'2027-01-12'}
+    )
+
+    $candidates = $table | Where-Object { $_.Family -eq $Family }
+    foreach ($c in $candidates) {
+        $buildMatch = $false
+        foreach ($prefix in $c.BuildPrefix) {
+            if ($Build -and ($Build -like "$prefix*")) { $buildMatch = $true; break }
+        }
+        if ($buildMatch -or ($VersionLabel -and ($VersionLabel -eq $c.Release))) {
+            return $c
+        }
+    }
+    return $null
+}
+
+function Get-LatestSecurityUpdateInfo {
+    try {
+        $hotfixes = Get-HotFix -ErrorAction Stop
+        if (-not $hotfixes) { return $null }
+        $preferred = $hotfixes | Where-Object { $_.Description -match 'Security|S[eé]curit[eé]' } | Sort-Object InstalledOn -Descending | Select-Object -First 1
+        if (-not $preferred) {
+            $preferred = $hotfixes | Sort-Object InstalledOn -Descending | Select-Object -First 1
+        }
+        if (-not $preferred) { return $null }
+
+        $installedOn = $preferred.InstalledOn
+        if ($installedOn -is [string] -and $installedOn) {
+            try { $installedOn = [datetime]$installedOn } catch {}
+        }
+
+        return [PSCustomObject]@{
+            HotFixID    = $preferred.HotFixID
+            Description = $preferred.Description
+            InstalledOn = $installedOn
+        }
+    } catch { return $null }
+}
+
+# -------------------------
+# Check: Windows support lifecycle and patch currency
+# -------------------------
+function Test-WindowsVersionSupport {
+    try {
+        $cvPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+        $productName = Get-RegString $cvPath "ProductName"
+        if (-not $productName) { $productName = $osCaption }
+
+        $displayVersion = Get-RegString $cvPath "DisplayVersion"
+        $releaseId = Get-RegString $cvPath "ReleaseId"
+        $build = Get-RegString $cvPath "CurrentBuild"
+        $ubr = Get-RegDword $cvPath "UBR"
+        $buildFull = if ($ubr -ne $null -and $build) { "$build.$ubr" } else { $build }
+        $versionLabel = $displayVersion
+        if (-not $versionLabel) { $versionLabel = $releaseId }
+        if (-not $versionLabel) { $versionLabel = $osVersion }
+
+        $family = Get-WindowsFamily -ProductName $productName
+        $lifecycle = Get-WindowsLifecycleRecord -Family $family -Build $build -VersionLabel $versionLabel
+
+        $supportEnd = $null
+        $supportOk = $false
+        if ($lifecycle) {
+            $supportEnd = $lifecycle.SupportEnd
+            $supportOk = ($supportEnd -gt (Get-Date))
+        }
+
+        $latestUpdate = Get-LatestSecurityUpdateInfo
+        $updateInfo = "LatestSecurityUpdate=(not found)"
+        if ($latestUpdate) {
+            $dateText = "(unknown)"
+            if ($latestUpdate.InstalledOn) {
+                try { $dateText = ([datetime]$latestUpdate.InstalledOn).ToString('yyyy-MM-dd') } catch { $dateText = "$($latestUpdate.InstalledOn)" }
+            }
+            $updateInfo = "LatestSecurityUpdate={0} ({1})" -f $latestUpdate.HotFixID, $dateText
+        }
+
+        $supportEndText = if ($supportEnd) { $supportEnd.ToString('yyyy-MM-dd') } else { "(unknown)" }
+        $ev = "Product=$productName; Version=$versionLabel; Build=$buildFull; SupportEnd=$supportEndText; $updateInfo"
+
+        $res = if ($supportOk) { 'Pass' } else { 'Fail' }
+        $recoEN = if ($supportOk) {
+            "OS release is supported; continue applying the latest cumulative security updates and monitor the lifecycle end date ($supportEndText)."
+        } else {
+            "Upgrade to a Windows release still under support per Microsoft lifecycle and keep applying the latest security updates."
+        }
+        $recoFR = if ($supportOk) {
+            "La version est supportee; continuer a appliquer les mises a jour de securite les plus recentes et surveiller la date de fin de support ($supportEndText)."
+        } else {
+            "Mettre a niveau vers une version de Windows encore supportee selon le cycle de vie Microsoft et appliquer les dernieres mises a jour de securite."
+        }
+        Add-Result "WIN-24" "Windows version support status" "Statut de support de la version Windows" `
+          "A.8.8, A.8.9, A.8.19" High $res `
+          $ev `
+          $recoEN `
+          $recoFR
+    } catch {
+        Add-Result "WIN-24" "Windows version support status" "Statut de support de la version Windows" `
+          "A.8.8, A.8.9, A.8.19" High Error `
+          ("Error: {0}" -f $_.Exception.Message) `
+          "Verify the Windows version against Microsoft lifecycle and ensure security updates are current." `
+          "Verifier la version de Windows vs le cycle de vie Microsoft et s assurer que les mises a jour de securite sont a jour."
+    }
+}
+
 # -------------------------
 # Check: Windows Update
 # -------------------------
@@ -703,11 +866,12 @@ function Test-WindowsUpdate {
 function Get-LocalAdminsSafe {
     # Returns objects with Name, Source (Local/Domain/Other)
     $members = @()
+    $adminGroup = Get-LocalizedAdminGroupName
 
     # Method 1: Get-LocalGroupMember (not available everywhere)
     try {
         if (Get-Command Get-LocalGroupMember -ErrorAction SilentlyContinue) {
-            $raw = Get-LocalGroupMember -Group "Administrators" -ErrorAction Stop
+            $raw = Get-LocalGroupMember -Group $adminGroup -ErrorAction Stop
             foreach ($m in $raw) {
                 $n = $m.Name
                 $src = "Other"
@@ -723,7 +887,7 @@ function Get-LocalAdminsSafe {
 
     # Method 2: ADSI WinNT provider
     try {
-        $grp = [ADSI]"WinNT://./Administrators,group"
+        $grp = [ADSI]("WinNT://./{0},group" -f $adminGroup)
         $raw = @($grp.psbase.Invoke("Members"))
         foreach ($r in $raw) {
             $name = $r.GetType().InvokeMember("Name",'GetProperty',$null,$r,$null)
@@ -768,39 +932,32 @@ function Test-LocalAdminsReview {
     }
 }
 
+function Get-GuestAccountInfo {
+    try {
+        $accounts = Get-CimInstance -ClassName Win32_UserAccount -Filter "LocalAccount=True" -ErrorAction Stop
+        $guest = $accounts | Where-Object { $_.SID -match '-501$' }
+        if (-not $guest) {
+            $guest = $accounts | Where-Object { $_.Name -in @('Guest','Invite','Invité') }
+        }
+        if (-not $guest) { throw "Guest account not found." }
+        return ($guest | Select-Object -First 1)
+    } catch {
+        throw $_
+    }
+}
+
 # -------------------------
 # Check: Guest account disabled
 # -------------------------
 function Test-GuestAccountDisabled {
     try {
-        $enabled = $null
-
-        # Method 1: Get-LocalUser (not on DC)
-        try {
-            if (Get-Command Get-LocalUser -ErrorAction SilentlyContinue) {
-                $u = Get-LocalUser -Name "Guest" -ErrorAction Stop
-                $enabled = $u.Enabled
-            }
-        } catch {}
-
-        # Method 2: net user
-        if ($null -eq $enabled) {
-            $out = & net user Guest 2>$null
-            if ($LASTEXITCODE -ne 0 -or -not $out) { throw "Cannot query Guest via net user." }
-            $txt = ($out | Out-String)
-            if ($txt -match 'Account active\s+(\w+)' ) {
-                $enabled = ($matches[1].ToLower() -eq 'yes')
-            } elseif ($txt -match 'Compte actif\s+(\w+)' ) {
-                $enabled = ($matches[1].ToLower() -eq 'oui')
-            } else {
-                throw "Cannot parse Guest status from net user output."
-            }
-        }
+        $guest = Get-GuestAccountInfo
+        $enabled = -not $guest.Disabled
 
         $res = if ($enabled -eq $false) { 'Pass' } else { 'Fail' }
         Add-Result "WIN-15" "Guest account disabled" "Compte Invite desactive" `
           "A.5.15, A.8.2, A.8.9" Medium $res `
-          ("Guest enabled={0}" -f $enabled) `
+          ("Guest enabled={0}; AccountName={1}" -f $enabled, $guest.Name) `
           "Disable the Guest account to reduce unauthorized access risk." `
           "Desactiver le compte Invite pour reduire le risque d acces non autorise."
     } catch {
@@ -1070,6 +1227,7 @@ function Test-WinRMHardening {
 # Check: TLS legacy protocols
 # -------------------------
 function Test-TLSLegacyDisabled {
+    if ($script:Profile -ne 'Server') { return }
     try {
         $base = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols"
         $targets = @(
@@ -1103,55 +1261,6 @@ function Test-TLSLegacyDisabled {
           ("Error: {0}" -f $_.Exception.Message) `
           "Verify SCHANNEL TLS protocol settings and enforce baseline." `
           "Verifier SCHANNEL (protocoles TLS) et imposer la baseline."
-    }
-}
-
-# -------------------------
-# Check: Event log size
-# -------------------------
-function Get-LogMaxSizeBytes {
-    param([string]$LogName)
-    $out = & wevtutil gl $LogName 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $out) { return $null }
-    foreach ($ln in $out) {
-        if ($ln -match '^\s*maxSize:\s*(\d+)\s*$') {
-            return [int64]$matches[1]
-        }
-    }
-    return $null
-}
-
-function Test-EventLogSize {
-    try {
-        $minBytes = 67108864 # 64 MB
-        $logs = @("Security","System","Application")
-        $evParts = @()
-        $bad = @()
-
-        foreach ($l in $logs) {
-            $b = Get-LogMaxSizeBytes -LogName $l
-            if ($null -eq $b) {
-                $evParts += ("{0}=(unknown)" -f $l)
-                $bad += $l
-                continue
-            }
-            $mb = [Math]::Round($b/1MB,2)
-            $evParts += ("{0}={1}MB" -f $l,$mb)
-            if ($b -lt $minBytes) { $bad += $l }
-        }
-
-        $res = if ($bad.Count -eq 0) { 'Pass' } else { 'Fail' }
-        Add-Result "WIN-24" "Event log max size (>= 64 MB)" "Taille max des journaux (>= 64 MB)" `
-          "A.8.15, A.8.16, A.8.9" Medium $res `
-          ("Min=64MB; " + ($evParts -join "; ")) `
-          "Increase Security/System/Application log maximum size (>= 64 MB) to reduce evidence loss risk." `
-          "Augmenter la taille max des logs Securite/Systeme/Application (>= 64 MB) pour reduire le risque de perte."
-    } catch {
-        Add-Result "WIN-24" "Event log max size (>= 64 MB)" "Taille max des journaux (>= 64 MB)" `
-          "A.8.15, A.8.16, A.8.9" Medium Error `
-          ("Error: {0}" -f $_.Exception.Message) `
-          "Verify event log sizing via wevtutil and enforce baseline." `
-          "Verifier la taille des logs via wevtutil et imposer la baseline."
     }
 }
 
@@ -1231,6 +1340,7 @@ Test-RDP
 Test-RemoteAssistanceDisabled
 Test-AntivirusPresence
 Test-BitLockerOSDrive
+Test-WindowsVersionSupport
 Test-WindowsUpdate
 Test-LocalAdminsReview
 Test-GuestAccountDisabled
@@ -1242,7 +1352,6 @@ Test-InsecureGuestAuthDisabled
 Test-LLMNRDisabled
 Test-WinRMHardening
 Test-TLSLegacyDisabled
-Test-EventLogSize
 Info-SecureBoot
 Info-InstalledSoftware
 
@@ -1278,14 +1387,14 @@ $labelScoreNote = L "Score is calculated from Pass/Fail checks only. Info/Error 
 
 $ctx = if ($Language -eq 'FR') {
 @"
-Ce rapport presente un audit de configuration hors ligne sur un systeme Windows (profil: $Profile).
-Il se base sur des controles techniques et des recommandations de durcissement alignees sur les controles technologiques pertinents de la norme ISO/IEC 27001 (Annexe A).
+Ce rapport presente un audit de configuration sur un systeme Windows (profil: $Profile).
+Il se base sur des controles techniques et des recommandations de durcissement alignees sur les exigences pertinentes de la norme ISO/IEC 27001 (Annexe A).
 $labelScoreNote
 "@
 } else {
 @"
-This report presents an offline configuration audit on a Windows system (profile: $Profile).
-It is based on technical configuration checks and hardening recommendations aligned with relevant ISO/IEC 27001 Annex A technology controls.
+This report presents a Windows configuration audit (profile: $Profile).
+It is based on technical configuration checks and hardening recommendations aligned with relevant ISO/IEC 27001 requirements.
 $labelScoreNote
 "@
 }
@@ -1385,7 +1494,7 @@ $html = @"
       </tbody>
     </table>
 
-    <p class="small" style="margin-top:18px;">Generated by Windows Config Audit Toolkit (offline) - v$($script:ToolVersion)</p>
+    <p class="small" style="margin-top:18px;">Generated by Windows Config Audit Toolkit - v$($script:ToolVersion)</p>
   </div>
 </body>
 </html>
