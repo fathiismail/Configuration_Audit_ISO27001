@@ -32,11 +32,11 @@ pre { white-space: pre-wrap; }</style>
       <p><strong>Profil:</strong> Desktop</p>
       <p><strong>Systeme d exploitation:</strong> Microsoft Windows 11 Pro (10.0.26200)</p>
       <p><strong>Version de l outil:</strong> 4.1.0</p>
-      <p><strong>Date:</strong> 2025-12-23 12:26:03</p>
-      <p><strong>Conformite globale (automatique):</strong> <span class="score">47.6 %</span></p>
+      <p><strong>Date:</strong> 2025-12-23 15:08:36</p>
+      <p><strong>Conformite globale (automatique):</strong> <span class="score">52.4 %</span></p>
       <p>
-        <span class="badge b-pass">Conforme: 10</span>
-        <span class="badge b-fail">Non conforme: 11</span>
+        <span class="badge b-pass">Conforme: 11</span>
+        <span class="badge b-fail">Non conforme: 10</span>
         <span class="badge b-err">Erreur: 0</span>
         <span class="badge b-info">Information: 5</span>
         <span class="badge b-info">Nombre total de controles: 26</span>
@@ -76,7 +76,7 @@ Le score est calcule uniquement a partir des controles Conforme/Non conforme. In
 <tr style='background-color:#f8d7da'><td>WIN-10</td><td>Assistance a distance desactivee</td><td>A.8.20, A.8.9</td><td>Moyenne</td><td><strong>Non conforme</strong></td><td class='wrap'>fAllowToGetHelp=1 (0=disabled,1=enabled)</td><td class='wrap'>Desactiver l assistance a distance sauf besoin explicite et controle.</td></tr>
 <tr style='background-color:#d4edda'><td>WIN-11</td><td>Protection antivirus / EDR detectee</td><td>A.8.7, A.8.9, A.5.34</td><td>Elevee</td><td><strong>Conforme</strong></td><td class='wrap'>WSC products: Kaspersky, Kaspersky, Windows Defender, Kaspersky | WSC detail: Kaspersky{rt=Unknown,def=UpToDate,hex=042000} | Kaspersky{rt=On,def=UpToDate,hex=041000} | Windows Defender{rt=Unknown,def=UpToDate,hex=060100} | Kaspersky{rt=On,def=UpToDate,hex=041000} | Defender: RealTime=False; SigAge=65535 day(s); AMServiceEnabled=False | Running security services: Kaspersky Password Manager 25.0 Service, Windows Defender Firewall</td><td class='wrap'>Assurer une solution antivirus/EDR installee et active (temps reel actif, mises a jour actives).</td></tr>
 <tr style='background-color:#d4edda'><td>WIN-12</td><td>Chiffrement disque (BitLocker) sur disque systeme</td><td>A.8.12, A.8.9, A.5.34</td><td>Elevee</td><td><strong>Conforme</strong></td><td class='wrap'>C:: Protection=On, Encryption=100%, Method=XtsAes128</td><td class='wrap'>Activer BitLocker (ou equivalent) sur le disque systeme pour proteger les donnees au repos.</td></tr>
-<tr style='background-color:#f8d7da'><td>WIN-24</td><td>Statut de support de la version Windows</td><td>A.8.8, A.8.9, A.8.19</td><td>Elevee</td><td><strong>Non conforme</strong></td><td class='wrap'>Product=Windows 10 Pro; Version=25H2; Build=26200.7462; SupportEnd=(unknown); LatestSecurityUpdate=KB5072033 (2025-12-11)</td><td class='wrap'>Mettre a niveau vers une version de Windows encore supportee selon le cycle de vie Microsoft et appliquer les dernieres mises a jour de securite.</td></tr>
+<tr style='background-color:#d4edda'><td>WIN-24</td><td>Statut de support de la version Windows</td><td>A.8.8, A.8.9, A.8.19</td><td>Elevee</td><td><strong>Conforme</strong></td><td class='wrap'>Family=Windows 11; Product=Microsoft Windows 11 Pro; Version=25H2; Build=26200.7462; SupportEnd=2027-10-14; LatestSecurityUpdate=KB5072033 (2025-12-11)</td><td class='wrap'>La version est supportee; continuer a appliquer les mises a jour de securite les plus recentes et surveiller la date de fin de support (2027-10-14).</td></tr>
 <tr style='background-color:#d4edda'><td>WIN-13</td><td>Configuration Windows Update / correctifs</td><td>A.8.8, A.8.9, A.8.19</td><td>Elevee</td><td><strong>Conforme</strong></td><td class='wrap'>AutoUpdateEnabled=True; WSUS=(not configured); LastDetectionSuccess=(unknown)</td><td class='wrap'>Activer les mises a jour automatiques et assurer une detection reguliere (ex: &lt;= 14 jours) via WSUS ou Microsoft Update.</td></tr>
 <tr style='background-color:#f8d7da'><td>WIN-14</td><td>Revue du groupe Administrateurs locaux</td><td>A.5.15, A.8.2, A.8.5, A.8.9</td><td>Elevee</td><td><strong>Non conforme</strong></td><td class='wrap'>MembersTotal=2; LocalMembers=2; DomainMembers=0</td><td class='wrap'>Reduire les admins locaux a &lt;= 1. Utiliser des comptes admin dedies et justifier les exceptions.</td></tr>
 <tr style='background-color:#d4edda'><td>WIN-15</td><td>Compte Invite desactive</td><td>A.5.15, A.8.2, A.8.9</td><td>Moyenne</td><td><strong>Conforme</strong></td><td class='wrap'>Guest enabled=False; AccountName=Invité</td><td class='wrap'>Desactiver le compte Invite pour reduire le risque d acces non autorise.</td></tr>

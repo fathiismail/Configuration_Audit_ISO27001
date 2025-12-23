@@ -32,12 +32,12 @@ pre { white-space: pre-wrap; }</style>
       <p><strong>Profile:</strong> Server</p>
       <p><strong>Operating System:</strong> Microsoft Windows Server 2019 Standard (10.0.17763)</p>
       <p><strong>Toolkit version:</strong> 4.1.0</p>
-      <p><strong>Date:</strong> 2025-12-23 13:24:05</p>
-      <p><strong>Overall compliance (automatic):</strong> <span class="score">60 %</span></p>
+      <p><strong>Date:</strong> 2025-12-23 13:48:40</p>
+      <p><strong>Overall compliance (automatic):</strong> <span class="score">59.1 %</span></p>
       <p>
-        <span class="badge b-pass">Pass: 12</span>
-        <span class="badge b-fail">Fail: 8</span>
-        <span class="badge b-err">Error: 2</span>
+        <span class="badge b-pass">Pass: 13</span>
+        <span class="badge b-fail">Fail: 9</span>
+        <span class="badge b-err">Error: 0</span>
         <span class="badge b-info">Information: 4</span>
         <span class="badge b-info">Total checks: 26</span>
       </p>
@@ -73,9 +73,9 @@ Score is calculated from Pass/Fail checks only. Info/Error do not impact the sco
 <tr style='background-color:#d4edda'><td>WIN-07</td><td>Windows Firewall enabled on all profiles</td><td>A.8.20, A.8.9, A.8.1</td><td>High</td><td><strong>Pass</strong></td><td class='wrap'>Domain=True; Private=True; Public=True</td><td class='wrap'>Enable Windows Firewall on Domain/Private/Public profiles.</td></tr>
 <tr style='background-color:#f8d7da'><td>WIN-08</td><td>Firewall default inbound action = Block</td><td>A.8.20, A.8.9</td><td>Medium</td><td><strong>Fail</strong></td><td class='wrap'>Domain=NotConfigured; Private=NotConfigured; Public=NotConfigured</td><td class='wrap'>Set default inbound action to Block on all profiles (allow only required rules).</td></tr>
 <tr style='background-color:#d4edda'><td>WIN-09</td><td>Remote Desktop (RDP) configuration</td><td>A.8.20, A.5.15, A.8.5, A.8.9</td><td>High</td><td><strong>Pass</strong></td><td class='wrap'>RDP Enabled=False; NLA Required=True</td><td class='wrap'>No action required. RDP is disabled.</td></tr>
-<tr style='background-color:#fff3cd'><td>WIN-10</td><td>Remote Assistance disabled</td><td>A.8.20, A.8.9</td><td>Medium</td><td><strong>Error</strong></td><td class='wrap'>Error: Cannot read fAllowToGetHelp.</td><td class='wrap'>Verify Remote Assistance policy via registry/GPO baseline.</td></tr>
+<tr style='background-color:#d4edda'><td>WIN-10</td><td>Remote Assistance disabled</td><td>A.8.20, A.8.9</td><td>Medium</td><td><strong>Pass</strong></td><td class='wrap'>fAllowToGetHelp not set under HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance (treated as disabled by default).</td><td class='wrap'>Disable Remote Assistance unless explicitly needed and controlled.</td></tr>
 <tr style='background-color:#d4edda'><td>WIN-11</td><td>Antivirus / EDR protection detected</td><td>A.8.7, A.8.9, A.5.34</td><td>High</td><td><strong>Pass</strong></td><td class='wrap'>WSC products: not available | Defender: RealTime=True; SigAge=23 day(s); AMServiceEnabled=True | Running security services: Microsoft Defender Core Service, Windows Defender Firewall, Microsoft Defender Antivirus Network Inspection Service, Microsoft Defender Antivirus Service</td><td class='wrap'>Ensure an AV/EDR solution is installed and actively protecting the system (real-time on, updates enabled).</td></tr>
-<tr style='background-color:#fff3cd'><td>WIN-12</td><td>Disk encryption (BitLocker) on OS drive</td><td>A.8.12, A.8.9, A.5.34</td><td>High</td><td><strong>Error</strong></td><td class='wrap'>Error: The term 'manage-bde' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.</td><td class='wrap'>Verify disk encryption status using BitLocker tools and policy baseline.</td></tr>
+<tr style='background-color:#f8d7da'><td>WIN-12</td><td>Disk encryption (BitLocker) on OS drive</td><td>A.8.12, A.8.9, A.5.34</td><td>High</td><td><strong>Fail</strong></td><td class='wrap'>BitLocker cmdlets and manage-bde are unavailable on this system (feature not installed?).</td><td class='wrap'>Enable BitLocker (or equivalent) on the OS drive to protect data at rest.</td></tr>
 <tr style='background-color:#d4edda'><td>WIN-24</td><td>Windows version support status</td><td>A.8.8, A.8.9, A.8.19</td><td>High</td><td><strong>Pass</strong></td><td class='wrap'>Family=Windows Server 2019; Product=Windows Server 2019 Standard; Version=1809; Build=17763.592; SupportEnd=2029-01-09; LatestSecurityUpdate=KB4504369 (2019-06-23)</td><td class='wrap'>OS release is supported; continue applying the latest cumulative security updates and monitor the lifecycle end date (2029-01-09).</td></tr>
 <tr style='background-color:#d4edda'><td>WIN-13</td><td>Windows Update / patch configuration</td><td>A.8.8, A.8.9, A.8.19</td><td>High</td><td><strong>Pass</strong></td><td class='wrap'>AutoUpdateEnabled=True; WSUS=(not configured); LastDetectionSuccess=(unknown)</td><td class='wrap'>Enable automatic updates and ensure patch detection happens regularly (e.g., within the last 14 days) via WSUS or Microsoft Update.</td></tr>
 <tr style='background-color:#d4edda'><td>WIN-14</td><td>Local Administrators group membership</td><td>A.5.15, A.8.2, A.8.5, A.8.9</td><td>High</td><td><strong>Pass</strong></td><td class='wrap'>MembersTotal=2; LocalMembers=2; DomainMembers=0</td><td class='wrap'>Reduce local admin users to &lt;= 2. Use dedicated admin accounts and justifications for exceptions.</td></tr>
