@@ -1,0 +1,20 @@
+# PowerShell specific
+*.log
+*.tmp
+
+# Output files
+output/*
+!output/.gitkeep
+
+# Config files with sensitive data
+config/*.secret.json
+*.credential.xml
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
