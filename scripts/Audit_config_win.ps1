@@ -2,7 +2,7 @@
 <#
 Windows Configuration Audit Toolkit - ISO 27001 aligned (technical configuration checks)
 - Supports: Desktop + Server profile
-- Output: HTML report (EN or FR full translation)
+- Output: Excel report (EN or FR full translation)
 - No manual checkpoints
 - No WIN-15 auditpol verification
 - Improved AV/EDR detection (Kaspersky + others) with multiple fallbacks
@@ -79,6 +79,12 @@ function Redact-Text {
     # Redact common "COMPUTER\user" patterns
     $t = $t -replace '([A-Za-z0-9\-\_\.]+)\\([A-Za-z0-9\-\_\.]+)', '<REDACTED_ACCOUNT>'
     return $t
+}
+
+function Escape-XmlText {
+    param([string]$Text)
+    if ($null -eq $Text) { return "" }
+    return [System.Security.SecurityElement]::Escape($Text)
 }
 
 function Add-Result {
@@ -1417,6 +1423,218 @@ Info-SecureBoot
 Info-InstalledSoftware
 
 # -------------------------
+# Excel export helper
+# -------------------------
+function New-AuditExcelReport {
+    param(
+        [string]$Path,
+        [hashtable]$Metadata,
+        $Results,
+        [string]$Language
+    )
+
+    Add-Type -AssemblyName 'System.IO.Compression.FileSystem' -ErrorAction SilentlyContinue
+
+    $statusOptions = @(
+        (ResLabel 'Pass'),
+        (ResLabel 'Fail'),
+        (ResLabel 'Error'),
+        (ResLabel 'Info'),
+        (L 'Not applicable' 'Non applicable')
+    )
+
+    $title          = L "Windows Configuration Audit - ISO 27001" "Audit de configuration Windows - ISO 27001"
+    $labelHost      = L "Host" "Hote"
+    $labelProfile   = L "Profile" "Profil"
+    $labelOS        = L "Operating System" "Systeme d exploitation"
+    $labelVersion   = L "Toolkit version" "Version de l outil"
+    $labelDate      = L "Date" "Date"
+    $labelOverall   = L "Automatic compliance (%)" "Conformite automatique (%)"
+    $labelPassCt    = L "Pass" "Conforme"
+    $labelFailCt    = L "Fail" "Non conforme"
+    $labelErrorCt   = L "Error" "Erreur"
+    $labelInfoCt    = L "Info" "Information"
+    $labelIsoRefs   = L "ISO refs covered" "References ISO couvertes"
+    $labelManual    = L "Use the Status dropdown to update findings; the compliance formula will refresh automatically." `
+                         "Utilisez la liste Statut pour mettre a jour les constats ; la formule de conformite se recalculera automatiquement."
+    $labelGlobal    = L "To build a global report, copy/paste the table rows into a consolidated workbook; compliance will update on paste." `
+                         "Pour un rapport global, copiez/collez les lignes du tableau dans un classeur consolide ; la conformite se mettra a jour lors du collage."
+    $labelStatusOpt = L "Status options" "Options de statut"
+    $labelHeaderId  = "ID"
+    $labelHeaderChk = L "Check" "Controle"
+    $labelHeaderIso = "ISO 27001"
+    $labelHeaderSev = L "Severity" "Criticite"
+    $labelHeaderRes = L "Status" "Statut"
+    $labelHeaderEv  = L "Current configuration (evidence)" "Configuration actuelle (preuve)"
+    $labelHeaderRec = L "Recommendation" "Recommandation"
+
+    $passLabel = (ResLabel 'Pass')
+    $failLabel = (ResLabel 'Fail')
+
+    $dataStartRow = 14
+    $dataEndRow = if ($Results.Count -gt 0) { $dataStartRow + $Results.Count - 1 } else { $dataStartRow }
+    $statusRange = "E${dataStartRow}:E${dataEndRow}"
+    $statusFormulaEnd = 1 + $statusOptions.Count
+    $complianceFormula = "IFERROR(ROUND(COUNTIF($statusRange,""=$passLabel"")/(COUNTIF($statusRange,""=$passLabel"")+COUNTIF($statusRange,""=$failLabel""))*100,1),0)"
+    $complianceValue = [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, "{0}", $Metadata.Compliance)
+
+    function New-InlineCell {
+        param([string]$Ref, [string]$Text)
+        return "<c r=""$Ref"" t=""inlineStr""><is><t xml:space=""preserve"">$(Escape-XmlText $Text)</t></is></c>"
+    }
+
+    function Add-RowXml {
+        param([System.Text.StringBuilder]$Sb, [int]$RowIndex, [string[]]$Cells)
+        $Sb.Append("  <row r=""$RowIndex"">") | Out-Null
+        foreach ($c in $Cells) { $Sb.Append($c) | Out-Null }
+        $Sb.Append("</row>`n") | Out-Null
+    }
+
+    $sheetSb = New-Object System.Text.StringBuilder
+    $sheetSb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>') | Out-Null
+    $sheetSb.AppendLine('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">') | Out-Null
+    $sheetSb.AppendLine('  <sheetData>') | Out-Null
+
+    Add-RowXml -Sb $sheetSb -RowIndex 1  -Cells @((New-InlineCell -Ref "A1" -Text $title))
+    Add-RowXml -Sb $sheetSb -RowIndex 2  -Cells @((New-InlineCell -Ref "A2" -Text $labelHost),    (New-InlineCell -Ref "B2" -Text $Metadata.Host))
+    Add-RowXml -Sb $sheetSb -RowIndex 3  -Cells @((New-InlineCell -Ref "A3" -Text $labelProfile), (New-InlineCell -Ref "B3" -Text $Metadata.Profile))
+    Add-RowXml -Sb $sheetSb -RowIndex 4  -Cells @((New-InlineCell -Ref "A4" -Text $labelOS),      (New-InlineCell -Ref "B4" -Text $Metadata.OS))
+    Add-RowXml -Sb $sheetSb -RowIndex 5  -Cells @((New-InlineCell -Ref "A5" -Text $labelVersion), (New-InlineCell -Ref "B5" -Text $Metadata.ToolkitVersion))
+    Add-RowXml -Sb $sheetSb -RowIndex 6  -Cells @((New-InlineCell -Ref "A6" -Text $labelDate),    (New-InlineCell -Ref "B6" -Text $Metadata.Date))
+    Add-RowXml -Sb $sheetSb -RowIndex 7  -Cells @((New-InlineCell -Ref "A7" -Text $labelOverall), "<c r=""B7""><f>$complianceFormula</f><v>$complianceValue</v></c>", (New-InlineCell -Ref "D7" -Text (L "Total checks" "Nombre total de controles")), (New-InlineCell -Ref "E7" -Text $Metadata.TotalChecks))
+    Add-RowXml -Sb $sheetSb -RowIndex 8  -Cells @((New-InlineCell -Ref "A8" -Text $labelPassCt),  (New-InlineCell -Ref "B8" -Text $Metadata.PassCount.ToString()), (New-InlineCell -Ref "C8" -Text $labelFailCt), (New-InlineCell -Ref "D8" -Text $Metadata.FailCount.ToString()), (New-InlineCell -Ref "E8" -Text $labelErrorCt), (New-InlineCell -Ref "F8" -Text $Metadata.ErrorCount.ToString()), (New-InlineCell -Ref "G8" -Text $labelInfoCt), (New-InlineCell -Ref "H8" -Text $Metadata.InfoCount.ToString()))
+    Add-RowXml -Sb $sheetSb -RowIndex 9  -Cells @((New-InlineCell -Ref "A9" -Text $labelIsoRefs), (New-InlineCell -Ref "B9" -Text $Metadata.IsoRefs))
+    Add-RowXml -Sb $sheetSb -RowIndex 10 -Cells @((New-InlineCell -Ref "A10" -Text (L "Context and scope" "Contexte et portee")), (New-InlineCell -Ref "B10" -Text $Metadata.Context))
+    Add-RowXml -Sb $sheetSb -RowIndex 11 -Cells @((New-InlineCell -Ref "A11" -Text $labelManual))
+    Add-RowXml -Sb $sheetSb -RowIndex 12 -Cells @((New-InlineCell -Ref "A12" -Text $labelGlobal))
+
+    # Header row
+    Add-RowXml -Sb $sheetSb -RowIndex ($dataStartRow - 1) -Cells @(
+        (New-InlineCell -Ref "A$($dataStartRow - 1)" -Text $labelHeaderId),
+        (New-InlineCell -Ref "B$($dataStartRow - 1)" -Text $labelHeaderChk),
+        (New-InlineCell -Ref "C$($dataStartRow - 1)" -Text $labelHeaderIso),
+        (New-InlineCell -Ref "D$($dataStartRow - 1)" -Text $labelHeaderSev),
+        (New-InlineCell -Ref "E$($dataStartRow - 1)" -Text $labelHeaderRes),
+        (New-InlineCell -Ref "F$($dataStartRow - 1)" -Text $labelHeaderEv),
+        (New-InlineCell -Ref "G$($dataStartRow - 1)" -Text $labelHeaderRec)
+    )
+
+    $rowIndex = $dataStartRow
+    foreach ($r in $Results) {
+        Add-RowXml -Sb $sheetSb -RowIndex $rowIndex -Cells @(
+            (New-InlineCell -Ref ("A$rowIndex") -Text $r.ID),
+            (New-InlineCell -Ref ("B$rowIndex") -Text $r.Check),
+            (New-InlineCell -Ref ("C$rowIndex") -Text $r.ISO27001),
+            (New-InlineCell -Ref ("D$rowIndex") -Text $r.Severity),
+            (New-InlineCell -Ref ("E$rowIndex") -Text $r.Result),
+            (New-InlineCell -Ref ("F$rowIndex") -Text $r.Evidence),
+            (New-InlineCell -Ref ("G$rowIndex") -Text $r.Reco)
+        )
+        $rowIndex++
+    }
+
+    $sheetSb.AppendLine('  </sheetData>') | Out-Null
+    $sheetSb.AppendLine("  <dataValidations count=""1"">") | Out-Null
+    $sheetSb.AppendLine("    <dataValidation type=""list"" allowBlank=""1"" showInputMessage=""1"" showErrorMessage=""1"" sqref=""$statusRange"">") | Out-Null
+    $sheetSb.AppendLine("      <formula1>'Lookups'!$A$2:$A$$statusFormulaEnd</formula1>") | Out-Null
+    $sheetSb.AppendLine("    </dataValidation>") | Out-Null
+    $sheetSb.AppendLine("  </dataValidations>") | Out-Null
+    $sheetSb.AppendLine('</worksheet>') | Out-Null
+
+    $lookupSb = New-Object System.Text.StringBuilder
+    $lookupSb.AppendLine('<?xml version="1.0" encoding="UTF-8"?>') | Out-Null
+    $lookupSb.AppendLine('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">') | Out-Null
+    $lookupSb.AppendLine('  <sheetData>') | Out-Null
+    Add-RowXml -Sb $lookupSb -RowIndex 1 -Cells @((New-InlineCell -Ref "A1" -Text $labelStatusOpt))
+    $lr = 2
+    foreach ($opt in $statusOptions) {
+        Add-RowXml -Sb $lookupSb -RowIndex $lr -Cells @((New-InlineCell -Ref ("A$lr") -Text $opt))
+        $lr++
+    }
+    $lookupSb.AppendLine('  </sheetData>') | Out-Null
+    $lookupSb.AppendLine('</worksheet>') | Out-Null
+
+    $styles = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1">
+    <font>
+      <sz val="11"/>
+      <color theme="1"/>
+      <name val="Calibri"/>
+      <family val="2"/>
+    </font>
+  </fonts>
+  <fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" applyNumberFormat="0"/></cellXfs>
+</styleSheet>
+"@
+
+    $workbook = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Audit" sheetId="1" r:id="rId1"/>
+    <sheet name="Lookups" sheetId="2" state="hidden" r:id="rId2"/>
+  </sheets>
+</workbook>
+"@
+
+    $workbookRels = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>
+"@
+
+    $rootRels = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"@
+
+    $contentTypes = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>
+"@
+
+    $tmpRoot = Join-Path $env:TEMP ("audit_excel_{0}" -f ([Guid]::NewGuid().ToString("N")))
+    New-Item -ItemType Directory -Path $tmpRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $tmpRoot "_rels") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $tmpRoot "xl") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $tmpRoot "xl/_rels") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $tmpRoot "xl/worksheets") -Force | Out-Null
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText((Join-Path $tmpRoot "[Content_Types].xml"), $contentTypes, $utf8NoBom)
+    [System.IO.File]::WriteAllText((Join-Path $tmpRoot "_rels/.rels"), $rootRels, $utf8NoBom)
+    [System.IO.File]::WriteAllText((Join-Path $tmpRoot "xl/workbook.xml"), $workbook, $utf8NoBom)
+    [System.IO.File]::WriteAllText((Join-Path $tmpRoot "xl/_rels/workbook.xml.rels"), $workbookRels, $utf8NoBom)
+    [System.IO.File]::WriteAllText((Join-Path $tmpRoot "xl/styles.xml"), $styles, $utf8NoBom)
+    [System.IO.File]::WriteAllText((Join-Path $tmpRoot "xl/worksheets/sheet1.xml"), $sheetSb.ToString(), $utf8NoBom)
+    [System.IO.File]::WriteAllText((Join-Path $tmpRoot "xl/worksheets/sheet2.xml"), $lookupSb.ToString(), $utf8NoBom)
+
+    $parentDir = Split-Path -Path $Path -Parent
+    if ($parentDir) { Ensure-Folder -Path $parentDir }
+    if (Test-Path $Path) { Remove-Item $Path -Force -ErrorAction SilentlyContinue }
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($tmpRoot, $Path)
+
+    Remove-Item $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# -------------------------
 # Compute compliance
 # - Only Pass/Fail count toward score
 # - Info/Error shown but not included in score
@@ -1431,144 +1649,41 @@ $compliance = if ($applicable -gt 0) { [Math]::Round(($passCount / $applicable) 
 
 $isoRefs = ($Results | ForEach-Object { $_.ISO27001.Split(',') } | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique) -join ", "
 
-# -------------------------
-# Report labels (full doc)
-# -------------------------
-$title = L "Windows Configuration Audit - ISO 27001" "Audit de configuration Windows - ISO 27001"
-$labelHost = L "Host" "Hote"
-$labelProfile = L "Profile" "Profil"
-$labelOS = L "Operating System" "Systeme d exploitation"
-$labelVersion = L "Toolkit version" "Version de l outil"
-$labelDate = L "Date" "Date"
-$labelOverallComp = L "Overall compliance (automatic)" "Conformite globale (automatique)"
-$labelDetails = L "Detailed checks" "Details des controles"
-$labelContext = L "Context and scope" "Contexte et portee"
-$labelScoreNote = L "Score is calculated from Pass/Fail checks only. Info/Error do not impact the score." `
-                    "Le score est calcule uniquement a partir des controles Conforme/Non conforme. Information/Erreur n impactent pas le score."
-
 $ctx = if ($Language -eq 'FR') {
 @"
 Ce rapport presente un audit de configuration sur un systeme Windows (profil: $Profile).
 Il se base sur des controles techniques et des recommandations de durcissement alignees sur les exigences pertinentes de la norme ISO/IEC 27001 (Annexe A).
-$labelScoreNote
+Le score est calcule uniquement a partir des controles Conforme/Non conforme. Information/Erreur n impactent pas le score.
 "@
 } else {
 @"
 This report presents a Windows configuration audit (profile: $Profile).
 It is based on technical configuration checks and hardening recommendations aligned with relevant ISO/IEC 27001 requirements.
-$labelScoreNote
+The score is calculated from Pass/Fail checks only. Info/Error do not impact the score.
 "@
 }
 
-# -------------------------
-# Build HTML
-# -------------------------
-$rowsHtml = ""
-foreach ($r in $Results) {
-    $rowColor = switch ($r.ResultRaw) {
-        'Pass'  { '#d4edda' }
-        'Fail'  { '#f8d7da' }
-        'Error' { '#fff3cd' }
-        'Info'  { '#d1ecf1' }
-        default { '#ffffff' }
-    }
-    $rowsHtml += "<tr style='background-color:$rowColor'>"
-    $rowsHtml += "<td>$(SafeText $r.ID)</td>"
-    $rowsHtml += "<td>$(SafeText $r.Check)</td>"
-    $rowsHtml += "<td>$(SafeText $r.ISO27001)</td>"
-    $rowsHtml += "<td>$(SafeText $r.Severity)</td>"
-    $rowsHtml += "<td><strong>$(SafeText $r.Result)</strong></td>"
-    $rowsHtml += "<td class='wrap'>$(SafeText $r.Evidence)</td>"
-    $rowsHtml += "<td class='wrap'>$(SafeText $r.Reco)</td>"
-    $rowsHtml += "</tr>`n"
-}
-
-$css = @"
-body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
-.container { max-width: 1500px; margin: 0 auto; background-color: white; padding: 28px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
-h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
-h2 { color: #34495e; margin-top: 28px; border-left: 4px solid #3498db; padding-left: 10px; }
-.summary { border: 2px solid #3498db; padding: 18px; margin: 18px 0; background-color: #ecf0f1; border-radius: 10px; }
-.summary p { margin: 6px 0; }
-.score { font-size: 2em; color: #3498db; font-weight: 800; }
-.badge { display: inline-block; padding: 6px 12px; border-radius: 6px; font-size: 0.9em; font-weight: 700; margin: 2px; }
-.b-pass { background-color: #d4edda; color: #155724; }
-.b-fail { background-color: #f8d7da; color: #721c24; }
-.b-err  { background-color: #fff3cd; color: #856404; }
-.b-info { background-color: #d1ecf1; color: #0c5460; }
-table { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: 14px; }
-th, td { border: 1px solid #ddd; padding: 10px; vertical-align: top; text-align: left; }
-th { background-color: #34495e; color: white; font-weight: 700; }
-tr:hover { background-color: #f8f9fa; }
-.small { color: #6c757d; font-size: 0.9em; }
-.wrap { word-break: break-word; }
-pre { white-space: pre-wrap; }
-"@
-
-$html = @"
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>$($title) - $($script:HostName) ($($Profile))</title>
-  <style>$css</style>
-</head>
-<body>
-  <div class="container">
-    <h1>$($title)</h1>
-
-    <div class="summary">
-      <p><strong>${labelHost}:</strong> $(SafeText $script:HostName)</p>
-      <p><strong>${labelProfile}:</strong> $(SafeText $Profile)</p>
-      <p><strong>${labelOS}:</strong> $(SafeText "$osCaption ($osVersion)")</p>
-      <p><strong>${labelVersion}:</strong> $(SafeText $script:ToolVersion)</p>
-      <p><strong>${labelDate}:</strong> $(SafeText ($script:Now.ToString("yyyy-MM-dd HH:mm:ss")))</p>
-      <p><strong>${labelOverallComp}:</strong> <span class="score">$compliance %</span></p>
-      <p>
-        <span class="badge b-pass">$(SafeText (ResLabel 'Pass')): $passCount</span>
-        <span class="badge b-fail">$(SafeText (ResLabel 'Fail')): $failCount</span>
-        <span class="badge b-err">$(SafeText (ResLabel 'Error')): $errorCount</span>
-        <span class="badge b-info">$(SafeText (ResLabel 'Info')): $infoCount</span>
-        <span class="badge b-info">$(SafeText (L 'Total checks' 'Nombre total de controles')): $($Results.Count)</span>
-      </p>
-      <p class="small">ISO refs covered: $(SafeText $isoRefs)</p>
-    </div>
-
-    <h2>$($labelContext)</h2>
-    <pre class="wrap">$(SafeText $ctx)</pre>
-
-    <h2>$($labelDetails)</h2>
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 90px;">ID</th>
-          <th style="width: 260px;">$(SafeText (L 'Check' 'Controle'))</th>
-          <th style="width: 170px;">ISO 27001</th>
-          <th style="width: 110px;">$(SafeText (L 'Severity' 'Criticite'))</th>
-          <th style="width: 130px;">$(SafeText (L 'Result' 'Resultat'))</th>
-          <th style="width: 360px;">$(SafeText (L 'Current configuration (evidence)' 'Configuration actuelle (preuve)'))</th>
-          <th>$(SafeText (L 'Recommendation' 'Recommandation'))</th>
-        </tr>
-      </thead>
-      <tbody>
-        $rowsHtml
-      </tbody>
-    </table>
-
-    <p class="small" style="margin-top:18px;">Generated by Windows Config Audit Toolkit - v$($script:ToolVersion)</p>
-  </div>
-</body>
-</html>
-"@
-
-# Write report in UTF-8 (no BOM) to avoid encoding issues in browsers
-$reportFileName = ("WinAudit_{0}_{1}_{2}.html" -f $script:HostName, $Profile, $script:Now.ToString('yyyyMMdd_HHmmss'))
+$reportFileName = ("WinAudit_{0}_{1}_{2}.xlsx" -f $script:HostName, $Profile, $script:Now.ToString('yyyyMMdd_HHmmss'))
 $reportPath = Join-Path $OutputFolder $reportFileName
-$utf8NoBomEncoding = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
-[System.IO.File]::WriteAllText($reportPath, $html, $utf8NoBomEncoding)
+
+New-AuditExcelReport -Path $reportPath -Metadata @{
+    Host           = $script:HostName
+    Profile        = $Profile
+    OS             = "$osCaption ($osVersion)"
+    ToolkitVersion = $script:ToolVersion
+    Date           = $script:Now.ToString("yyyy-MM-dd HH:mm:ss")
+    Compliance     = $compliance
+    TotalChecks    = $Results.Count
+    PassCount      = $passCount
+    FailCount      = $failCount
+    ErrorCount     = $errorCount
+    InfoCount      = $infoCount
+    IsoRefs        = $isoRefs
+    Context        = $ctx.Trim()
+} -Results $Results -Language $Language
 
 Write-Host ""
-Write-Host (L "Report generated:" "Rapport genere:") -ForegroundColor Green
+Write-Host (L "Report generated (Excel):" "Rapport genere (Excel):") -ForegroundColor Green
 Write-Host $reportPath -ForegroundColor Yellow
-Write-Host (L "Compliance score:" "Score de conformite:") -NoNewline
+Write-Host (L "Compliance score (automatic):" "Score de conformite (automatique):") -NoNewline
 Write-Host (" $compliance% ($passCount/$applicable Pass/Fail checks)" ) -ForegroundColor Cyan
