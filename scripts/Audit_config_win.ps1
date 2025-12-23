@@ -694,14 +694,14 @@ function Test-BitLockerOSDrive {
 function Get-WindowsFamily {
     param([string]$ProductName, [string]$Build)
 
+    # Some preview/dev builds report a legacy product name (e.g., "Windows 10 Pro") even
+    # though the build number clearly belongs to Windows 11 (26000+). To avoid false
+    # downgrades, sanitize the build string and prefer build-based detection when reliable.
     $buildNum = $null
-    [int]::TryParse($Build, [ref]$buildNum) | Out-Null
-
-    if ($ProductName -match 'Windows 11') { return 'Windows 11' }
-    if ($ProductName -match 'Windows 10') { return 'Windows 10' }
-    if ($ProductName -match 'Windows Server 2022') { return 'Windows Server 2022' }
-    if ($ProductName -match 'Windows Server 2019') { return 'Windows Server 2019' }
-    if ($ProductName -match 'Windows Server 2016') { return 'Windows Server 2016' }
+    if ($Build) {
+        $buildCore = $Build -replace "[^0-9].*$", ""  # keep the leading numeric portion (e.g., 26200.7462 -> 26200)
+        [int]::TryParse($buildCore, [ref]$buildNum) | Out-Null
+    }
 
     if ($buildNum) {
         # Desktop/workstation builds: Windows 11 uses build 22000+, while Windows 10 stops at 19045
@@ -714,6 +714,12 @@ function Get-WindowsFamily {
         if ($buildNum -ge 17763 -and $buildNum -lt 19000) { return 'Windows Server 2019' }
         if ($buildNum -ge 14393 -and $buildNum -lt 17763) { return 'Windows Server 2016' }
     }
+
+    if ($ProductName -match 'Windows 11') { return 'Windows 11' }
+    if ($ProductName -match 'Windows 10') { return 'Windows 10' }
+    if ($ProductName -match 'Windows Server 2022') { return 'Windows Server 2022' }
+    if ($ProductName -match 'Windows Server 2019') { return 'Windows Server 2019' }
+    if ($ProductName -match 'Windows Server 2016') { return 'Windows Server 2016' }
 
     return 'Unknown'
 }
