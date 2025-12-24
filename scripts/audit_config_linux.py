@@ -4,7 +4,7 @@ Linux Configuration Audit Toolkit - ISO 27001 aligned
 - Supports: Desktop + Server profile
 - Output: Excel report (EN or FR full translation)
 - No manual checkpoints
-
+.pX5vxaS
 This script mirrors the behavior of the Windows PowerShell audit by
 collecting common Linux hardening signals and exporting an Excel report
 with bilingual labels.
@@ -264,7 +264,7 @@ def check_pwquality(results: List[AuditResult], language: str) -> None:
             reco_en="Review PAM configuration to enforce password complexity.",
             reco_fr="Verifier la configuration PAM pour imposer la complexite des mots de passe.",
         )
-
+NAW3JK9
 
 def check_account_lockout(results: List[AuditResult], language: str) -> None:
     try:
